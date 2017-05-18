@@ -2,10 +2,12 @@
 #include <string.h>
 #include <sys/types.h>
 #include <winsock2.h>
-#pragma comment(lib, "ws2_32.lib")
-
+#include <fstream>
 
 #define BUFSIZE 1024*24
+#pragma comment(lib, "ws2_32.lib")
+
+using namespace std;
 
 
 class UdpServerSocket
@@ -27,6 +29,8 @@ public :
 	UdpServerSocket(int port);
 	void createSocket();
 	void bindSocket();
+	void sendMessage(char* message);
+	void sendFile(char* file_name);
 	char* receiveMessage();
 };
 
@@ -72,4 +76,28 @@ char* UdpServerSocket::receiveMessage()
 	int mLen = recvfrom(servSock, buf, BUFSIZE, 0, (SOCKADDR *)&cliAddr, &cliLen);
 	buf[mLen] = 0;
 	return buf;
+}
+
+void UdpServerSocket::sendMessage(char* message)
+{
+	int mLen = strlen(message);
+	strcpy(buf, message);
+	sendto(servSock, buf, mLen, 0, (struct sockaddr *)&cliAddr, sizeof(cliAddr));
+}
+
+void UdpServerSocket::sendFile(char* file_name)
+{
+	ifstream file(file_name);
+
+	if(file.is_open())
+	{
+		while(file.getline(buf, BUFSIZE))
+		{
+			strcat(buf, "\n");
+			sendMessage(buf);
+		}
+		file.close();
+	}
+	strcpy(buf, "EOF");
+	sendMessage(buf);
 }
