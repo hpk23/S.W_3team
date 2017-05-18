@@ -3,14 +3,15 @@
 #include <sys/types.h>
 #include <winsock2.h>
 #include <fstream>
-
-#define BUFSIZE 1024*24
+#include <windows.h>
 #pragma comment(lib, "ws2_32.lib")
+
+#define BUFSIZE 1024
+#define LISTENNUM 5
 
 using namespace std;
 
-
-class UdpServerSocket
+class TcpServerSocket
 {
 private :
 	int port;
@@ -22,23 +23,26 @@ private :
 	struct sockaddr_in cliAddr;
 
 	SOCKET servSock;
+	SOCKET cliSock;
 	
 	char buf[BUFSIZE+5];
 public :
-	UdpServerSocket(int port);
+	TcpServerSocket(int port);
 	void createSocket();
 	void bindSocket();
+	void listenSocket();
+	void acceptSocket();
 	void sendMessage(char* message);
-	void sendFile(char* file_name);
 	char* receiveMessage();
+	void sendFile(char* file_name);
 };
 
-UdpServerSocket::UdpServerSocket(int port)
+TcpServerSocket::TcpServerSocket(int port)
 {
 	this->port = port;
 }
 
-void UdpServerSocket::createSocket()
+void TcpServerSocket::createSocket()
 {
 	if ((WSAStartup(MAKEWORD(2, 2), &wsaData)) != 0)
 	{
@@ -46,7 +50,7 @@ void UdpServerSocket::createSocket()
 		exit(1);
 	}
 
-	if ((servSock = socket(PF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
+	if ((servSock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
 	{
 		perror("servSock :");
 		exit(1);
@@ -56,35 +60,54 @@ void UdpServerSocket::createSocket()
 	servAddr.sin_family = AF_INET;
 	servAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	servAddr.sin_port = htons(port);
-
 }
 
-void UdpServerSocket::bindSocket()
+void TcpServerSocket::bindSocket()
 {
 	if (bind(servSock, (SOCKADDR *)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
 	{
 		perror("bind error : ");
 		exit(1);
 	}
-
-	cliLen = sizeof(cliAddr);
 }
 
-char* UdpServerSocket::receiveMessage()
+void TcpServerSocket::listenSocket()
 {
-	int mLen = recvfrom(servSock, buf, BUFSIZE, 0, (SOCKADDR *)&cliAddr, &cliLen);
+	if(listen(servSock, LISTENNUM) == SOCKET_ERROR)
+	{
+		perror("listen error : ");
+		exit(1);
+	}
+}
+
+void TcpServerSocket::acceptSocket()
+{
+	cliLen = sizeof(cliAddr);
+	
+	cliSock=accept(servSock, (struct sockaddr *)&cliAddr, &cliLen);
+	if(cliSock==INVALID_SOCKET)
+	{
+		perror("accept error : ");
+		exit(1);
+	}
+}
+
+void TcpServerSocket::sendMessage(char* message)
+{
+	strcpy(buf, message);
+	send(cliSock, buf, strlen(buf), 0);
+	Sleep(100);
+}
+
+char* TcpServerSocket::receiveMessage()
+{
+	int mLen = recv(cliSock, buf, BUFSIZE, 0);
+
 	buf[mLen] = 0;
 	return buf;
 }
 
-void UdpServerSocket::sendMessage(char* message)
-{
-	int mLen = strlen(message);
-	strcpy(buf, message);
-	sendto(servSock, buf, mLen, 0, (struct sockaddr *)&cliAddr, sizeof(cliAddr));
-}
-
-void UdpServerSocket::sendFile(char* file_name)
+void TcpServerSocket::sendFile(char* file_name)
 {
 	ifstream file(file_name);
 
