@@ -76,7 +76,7 @@ char* UdpClientSocket::receiveMessage()
 
 	if(memcmp(&peerAddr, &servAddr, sizeof(peerAddr)))
 	{
-		printf("It is not data from the server..\n");
+		printf("It is not dat afrom server..\n");
 		exit(1);
 	}
 	buf[mLen] = 0;
