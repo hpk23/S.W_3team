@@ -10,7 +10,7 @@
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
-#define BUFSIZE 1024 * 30
+#define BUFSIZE 1024 * 10
 #define LISTENNUM 5
 
 using namespace std;
@@ -37,6 +37,7 @@ public :
 	void sendMessage(char* message);
 	string getHash(string md5Str);
 	void sendFile(char* file_name);
+	void searchFiles(char* path);
 	char* receiveMessage();
 };
 
@@ -142,4 +143,72 @@ void UdpServerSocket::sendFile(char* file_name)
 	//send hash_value
 	char* hash = (char*)hash_value.c_str();
 	sendMessage(hash);
+}
+
+void UdpServerSocket::searchFiles(char* path)
+{
+	DIR *dp;
+	struct dirent *dent;
+	char temp[1024];
+	char send_file_name[BUFSIZE] = "";
+
+	if((dp = opendir(path)) == NULL)
+	{ 
+		char temp_path[1024];
+		strcpy(temp_path, path);
+		char* ptr = strtok(temp_path, "/");
+		while(ptr != NULL)
+		{
+			if(!strcmp(ptr, "data"))
+			{
+				ptr = strtok(NULL, "/");
+				break;
+			}
+			ptr = strtok(NULL, "/");
+		}
+
+		while(ptr != NULL)
+		{
+			strcat(send_file_name, ptr);
+			ptr = strtok(NULL, "/");
+		}
+
+		sendMessage(send_file_name);
+		sendFile(path);
+	}
+
+	while((dent = readdir(dp)))
+	{
+		if(dent->d_name[0] == '.') continue;
+
+		sprintf(temp, "%s/%s", path, dent->d_name);
+		if(opendir(temp) != NULL) searchFiles(temp);
+
+		else
+		{
+			char temp_path[1024];
+			strcpy(temp_path, path);
+			char* ptr = strtok(temp_path, "/");
+			while(ptr != NULL)
+			{
+				if(!strcmp(ptr, "data"))
+				{
+					ptr = strtok(NULL, "/");
+					break;
+				}
+				ptr = strtok(NULL, "/");
+			}
+
+			while(ptr != NULL)
+			{
+				strcat(send_file_name, ptr);
+				ptr = strtok(NULL, "/");
+			}
+			strcat(send_file_name, "/");
+			strcat(send_file_name, dent->d_name);
+			sendMessage(send_file_name);
+			memset(send_file_name, 0, sizeof(send_file_name));
+			sendFile(temp);
+		} 
+	}
 }
