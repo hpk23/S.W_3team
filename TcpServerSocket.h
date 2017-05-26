@@ -7,6 +7,8 @@
 #include <string>
 #include <iostream>
 #include <dirent.h>
+#include <vector>
+#include <utility>
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
@@ -30,17 +32,21 @@ private :
 	SOCKET cliSock;
 	
 	char buf[BUFSIZE+5];
+
+	vector< pair<int, pair< string, string> > > file_list;
 public :
 	TcpServerSocket(int port);
 	void createSocket();
 	void bindSocket();
 	void listenSocket();
 	void acceptSocket();
+	void closeSocket();
 	void sendMessage(char* message);
 	string getHash(string md5Str); // get hash_value
 	char* receiveMessage();
 	void sendFile(char* file_name);
 	void searchFiles(char* path);
+	int getFileSize(char* file_name);
 };
 
 TcpServerSocket::TcpServerSocket(int port)
@@ -98,6 +104,11 @@ void TcpServerSocket::acceptSocket()
 	}
 }
 
+void TcpServerSocket::closeSocket()
+{
+	closesocket(servSock);
+}
+
 void TcpServerSocket::sendMessage(char* message)
 {
 	strcpy(buf, message);
@@ -110,6 +121,22 @@ char* TcpServerSocket::receiveMessage()
 	int mLen = recv(cliSock, buf, BUFSIZE, 0);
 	buf[mLen] = 0;
 	return buf;
+}
+
+int TcpServerSocket::getFileSize(char* file_name)
+{
+	FILE *file;
+
+	if( (file = fopen(file_name, "rb")) == NULL)
+	{
+		perror("fopen : ");
+		exit(1);
+	}
+
+	fseek(file, 0, SEEK_END);
+	int file_size = ftell(file);
+
+	return file_size;
 }
 
 string TcpServerSocket::getHash(string md5Str)
@@ -134,7 +161,6 @@ void TcpServerSocket::sendFile(char* file_name)
 	string hash_value = "";
 	int len;
 	FILE *file;
-
 
 	if( (file = fopen(file_name, "rb")) == NULL)
 	{
@@ -193,8 +219,10 @@ void TcpServerSocket::searchFiles(char* path)
 			ptr = strtok(NULL, "/");
 		}
 
-		sendMessage(send_file_name);
-		sendFile(path);
+		int file_size = getFileSize(path);
+		file_list.push_back(make_pair(file_size, make_pair(path, send_file_name)));
+		//sendMessage(send_file_name);
+		//sendFile(path);
 	}
 
 	while((dent = readdir(dp)))
@@ -226,9 +254,12 @@ void TcpServerSocket::searchFiles(char* path)
 			}
 			strcat(send_file_name, "/");
 			strcat(send_file_name, dent->d_name);
-			sendMessage(send_file_name);
+			
+			int file_size = getFileSize(temp);
+			file_list.push_back(make_pair(file_size, make_pair(temp, send_file_name)));
+			//sendMessage(send_file_name);
 			memset(send_file_name, 0, sizeof(send_file_name));
-			sendFile(temp);
+			//sendFile(temp);
 		} 
 	}
 }
