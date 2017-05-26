@@ -6,10 +6,12 @@
 #include <windows.h>
 #include <iostream>
 #include <dirent.h>
+#include <windows.h>
+#include <time.h>
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
-#define BUFSIZE 1024 * 30
+#define BUFSIZE 1024 * 10
 
 using namespace std;
 
@@ -108,20 +110,51 @@ string TcpClientSocket::getHash(string md5Str)
 
 void TcpClientSocket::receiveFile(char* file_name)
 {
+
+	printf("TCP protocol\n\n");
+	
+	char directory[1024] = "";
+	int f_len = strlen(file_name), idx = 0;
+	double receive_size = 0.0;
+	char temp [1024];
+
+	for(int i=0; i<f_len; i++)
+	{
+		if(file_name[i] == '/')
+		{
+			temp[idx] = 0;
+			strcat(directory, temp);
+			idx = 0;
+		}
+		else temp[idx++] = file_name[i];
+	}	
+
 	FILE* outFile;
 
 	if((outFile = fopen(file_name, "wb")) == NULL)
 	{
-		perror("outFile open : ");
-		exit(1);
+		if(CreateDirectory(directory, NULL)) {}
+		if((outFile = fopen(file_name, "wb")) == NULL)
+		{
+			perror("outFile open : ");
+			exit(1);
+		}
 	}
 
 	strcpy(buf, receiveMessage());
+
+	clock_t start_time = clock();
+	int cnt = 0;
 	while(strcmp(buf, "EOF"))
 	{
-		fwrite(buf, sizeof(buf[0]), strlen(buf), outFile);
+		int size = strlen(buf);
+		fwrite(buf, sizeof(buf[0]), size, outFile);
 		strcpy(buf, receiveMessage());
+		receive_size += (double)size;
+		if(cnt % 50 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+		cnt++;
 	}
+	printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
 	fclose(outFile);
 
 	string receive_hash_value;
@@ -161,7 +194,10 @@ void TcpClientSocket::receiveFile(char* file_name)
 
 	//compare receive_hash_value, my_hash_value
 	if(receive_hash_value == my_hash_value)
-		printf("The file was successfully received.");
+		printf("The file was successfully received.\n");
 	else
-		printf("The file download failed... Please try again");
+	{
+		printf("The file download failed... Please try again\n");
+		exit(1);
+	}
 }
