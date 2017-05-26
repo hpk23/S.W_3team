@@ -36,9 +36,10 @@ public :
 	TcpClientSocket(int port, char* ip, int serv_port);
 	void createSocket();
 	void connectSocket();
+	void closeSocket();
 	void sendMessage(char* message);
 	char* receiveMessage();
-	void receiveFile(char* file_name);
+	void receiveFile(string f_name);
 	string getHash(string md5Str);
 };
 
@@ -46,7 +47,7 @@ TcpClientSocket::TcpClientSocket(int port, char* ip, int serv_port)
 {
 	this->port = port;
 	strcpy(servIp, ip);
-	servPort = serv_port;
+	this->servPort = serv_port;
 }
 
 void TcpClientSocket::createSocket()
@@ -68,6 +69,12 @@ void TcpClientSocket::createSocket()
 	servAddr.sin_addr.s_addr = inet_addr(servIp);
 	servAddr.sin_port = htons(servPort);
 }
+
+void TcpClientSocket::closeSocket()
+{
+	closesocket(sock);
+}
+
 
 void TcpClientSocket::connectSocket()
 {
@@ -108,9 +115,9 @@ string TcpClientSocket::getHash(string md5Str)
 	return hex_output;
 }
 
-void TcpClientSocket::receiveFile(char* file_name)
+void TcpClientSocket::receiveFile(string f_name)
 {
-
+	char* file_name = (char*)f_name.c_str();
 	printf("TCP protocol\n\n");
 	
 	char directory[1024] = "";
@@ -151,7 +158,7 @@ void TcpClientSocket::receiveFile(char* file_name)
 		fwrite(buf, sizeof(buf[0]), size, outFile);
 		strcpy(buf, receiveMessage());
 		receive_size += (double)size;
-		if(cnt % 50 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+		if(cnt % 100 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
 		cnt++;
 	}
 	printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
