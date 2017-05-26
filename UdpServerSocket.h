@@ -7,6 +7,8 @@
 #include <string>
 #include <iostream>
 #include <dirent.h>
+#include <vector>
+#include <utility>
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
@@ -30,15 +32,20 @@ private :
 	SOCKET servSock;
 	
 	char buf[BUFSIZE+5];
+
+	vector< pair<int, pair< string, string> > > file_list;
 public :
 	UdpServerSocket(int port);
 	void createSocket();
 	void bindSocket();
+	void closeSocket();
 	void sendMessage(char* message);
 	string getHash(string md5Str);
 	void sendFile(char* file_name);
-	void searchFiles(char* path);
 	char* receiveMessage();
+	void searchFiles(char* path);
+	int getFileSize(char* file_name);
+	vector< pair<int, pair< string, string> > > getFileList();
 };
 
 UdpServerSocket::UdpServerSocket(int port)
@@ -78,6 +85,11 @@ void UdpServerSocket::bindSocket()
 	cliLen = sizeof(cliAddr);
 }
 
+void UdpServerSocket::closeSocket()
+{
+	closesocket(servSock);
+}
+
 char* UdpServerSocket::receiveMessage()
 {
 	int mLen = recvfrom(servSock, buf, BUFSIZE, 0, (SOCKADDR *)&cliAddr, &cliLen);
@@ -90,7 +102,7 @@ void UdpServerSocket::sendMessage(char* message)
 	int mLen = strlen(message);
 	strcpy(buf, message);
 	sendto(servSock, buf, mLen, 0, (struct sockaddr *)&cliAddr, sizeof(cliAddr));
-	Sleep(10);
+	Sleep(20);
 }
 
 string UdpServerSocket::getHash(string md5Str)
@@ -110,11 +122,11 @@ string UdpServerSocket::getHash(string md5Str)
 
 void UdpServerSocket::sendFile(char* file_name)
 {
-	printf("UDP protocol\n\n");
+	printf("\nUDP protocol\n");
+	printf("Transfer this file : %s\n", file_name);
 	string hash_value = "";
 	int len;
 	FILE *file;
-
 
 	if( (file = fopen(file_name, "rb")) == NULL)
 	{
@@ -173,8 +185,11 @@ void UdpServerSocket::searchFiles(char* path)
 			ptr = strtok(NULL, "/");
 		}
 
-		sendMessage(send_file_name);
-		sendFile(path);
+		int file_size = getFileSize(path);
+		file_list.push_back(make_pair(file_size, make_pair(path, send_file_name)));
+
+		//sendMessage(send_file_name);
+		//sendFile(path);
 	}
 
 	while((dent = readdir(dp)))
@@ -206,9 +221,33 @@ void UdpServerSocket::searchFiles(char* path)
 			}
 			strcat(send_file_name, "/");
 			strcat(send_file_name, dent->d_name);
-			sendMessage(send_file_name);
+
+			int file_size = getFileSize(temp);
+			file_list.push_back(make_pair(file_size, make_pair(temp, send_file_name)));
+			//sendMessage(send_file_name);
 			memset(send_file_name, 0, sizeof(send_file_name));
-			sendFile(temp);
+			//sendFile(temp);
 		} 
 	}
+}
+
+int UdpServerSocket::getFileSize(char* file_name)
+{
+	FILE *file;
+
+	if( (file = fopen(file_name, "rb")) == NULL)
+	{
+		perror("fopen : ");
+		exit(1);
+	}
+
+	fseek(file, 0, SEEK_END);
+	int file_size = ftell(file);
+
+	return file_size;
+}
+
+vector< pair<int, pair< string, string> > > UdpServerSocket::getFileList()
+{
+	return file_list;
 }
