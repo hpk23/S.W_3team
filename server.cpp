@@ -27,13 +27,14 @@ int main()
 	tcp.createSocket();
 	tcp.bindSocket();
 	tcp.listenSocket();
-
-	Sleep(1000);
-	tcp.acceptSocket();
+	
 
 	while(true)
 	{
+		udp.clearFileList();
+		tcp.clearFileList();
 		printf("\nWaiting...\n");
+		tcp.acceptSocket();
 		message = udp.receiveMessage();
 		printf("%s\n", message);
 
@@ -59,8 +60,6 @@ int main()
 		// send file list size 
 		sprintf(buf, "%d", size);
 		udp.sendMessage(buf);
-
-		
 
 		for(int i=0; i<size; i++)
 		{
@@ -93,63 +92,4 @@ int main()
 	}
 
 	return 0;
-
-	/*
-	// receive select number
-	message = udp.receiveMessage();
-
-	// send data list
-	strcpy(buf, data_list[0]);
-	for(int i=1; i<=2; i++)
-		strcat(buf, data_list[i]);
-	udp.sendMessage(buf);
-
-	// receive select number
-	strcpy(buf, udp.receiveMessage());
-	int select = atoi(buf);
-
-	// data path
-	strcpy(buf, data_path[select-1]);
-
-
-
-
-	// UDP
-	if(!strcmp(message, "1"))
-	{
-		
-		
-
-		// send Files
-		udp.searchFiles(buf);
-		strcpy(buf, "CLEAR");
-		udp.sendMessage(buf);
-	}
-
-	// TCP
-	else if(!strcmp(message, "2"))
-	{
-		tcp.acceptSocket();
-		strcpy(buf, data_list[0]);
-		for(int i=1; i<=2; i++)
-			strcat(buf, data_list[i]);
-		tcp.sendMessage(buf);
-
-		// receive select number
-		strcpy(buf, tcp.receiveMessage());
-		int select = atoi(buf);
-
-		// data path
-		strcpy(buf, data_path[select-1]);
-
-		// send Files
-		tcp.searchFiles(buf);
-		
-		strcpy(buf, "CLEAR");
-		printf("buf : %s\n", buf);
-		tcp.sendMessage(buf);
-	}
-
-	return 0;
-	*/
 }
