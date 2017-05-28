@@ -19,12 +19,11 @@ int main()
 	TcpClientSocket tcp(TCP_CLIENT_PORT, IP, TCP_SERV_PORT);
 
 	udp.createSocket();
-	Sleep(1000);
+
 	
 	tcp.createSocket();
 	tcp.connectSocket();
 	Sleep(1000);
-	printf("connect...\n");
 
 	strcpy(buf, "I want to download a file");
 	udp.sendMessage(buf);
@@ -50,8 +49,6 @@ int main()
 	strcpy(buf, udp.receiveMessage());
 	int size = atoi(buf);
 
-	printf("size : %d\n", size);
-
 	//receive file
 	for(int i=0; i<size; i++)
 	{
@@ -67,10 +64,20 @@ int main()
 		else
 		{
 			char* file_name = tcp.receiveMessage();
-			printf("file_name : %s\n", file_name);
 			tcp.receiveFile(file_name);
 		}
 	}
+
+	vector<string> fail_file_list = tcp.getCorruptedFileList();
+	size = fail_file_list.size();
+	printf("\n----------download fail file----------\n");
+	int cnt = 1;
+	for(int i=0; i<size; i++)
+		printf("%d. %s\n", cnt++, (char*)fail_file_list[i].c_str());
+	fail_file_list = udp.getCorruptedFileList();
+	size = fail_file_list.size();
+	for(int i=0; i<size; i++)
+		printf("%d. %s\n", cnt++, (char*)fail_file_list[i].c_str());
 
 	return 0;
 }
