@@ -35,8 +35,9 @@ private :
 public :
 	UdpClientSocket(int port, char* ip, int serv_port);
 	void createSocket();
+	void closeSocket();
 	void sendMessage(char* message);
-	void receiveFile(char* file_name);
+	void receiveFile(string f_name);
 	char* receiveMessage();
 	string getHash(string md5Str);
 };
@@ -68,6 +69,11 @@ void UdpClientSocket::createSocket()
 	servAddr.sin_port = htons(servPort);
 
 	peerLen = sizeof(peerAddr);
+}
+
+void UdpClientSocket::closeSocket()
+{
+	closesocket(sock);
 }
 
 void UdpClientSocket::sendMessage(char* message)
@@ -106,8 +112,9 @@ string UdpClientSocket::getHash(string md5Str)
 	return hex_output;
 }
 
-void UdpClientSocket::receiveFile(char* file_name)
+void UdpClientSocket::receiveFile(string f_name)
 {
+	char* file_name = (char*)f_name.c_str();
 	printf("UDP protocol\n\n");
 
 	char directory[1024] = "";
@@ -148,13 +155,14 @@ void UdpClientSocket::receiveFile(char* file_name)
 		fwrite(buf, sizeof(buf[0]), size, outFile);
 		strcpy(buf, receiveMessage());
 		receive_size += (double)size;
-		if(cnt % 50 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+		if(cnt % 100 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
 		cnt++;
 	}
 	printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
 	fclose(outFile);
 
 	string receive_hash_value;
+	printf("%s\n", file_name);
 
 	// receive file size
 	string receive_file_size = receiveMessage();
@@ -167,6 +175,8 @@ void UdpClientSocket::receiveFile(char* file_name)
 	int len;
 
 	string my_hash_value = "";
+
+	printf("%s\n", file_name);
 
 	if( (myFile = fopen(file_name, "rb")) == NULL )
 	{
