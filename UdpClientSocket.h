@@ -8,10 +8,12 @@
 #include <dirent.h>
 #include <windows.h>
 #include <time.h>
+#include <io.h>
+#include <vector>
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
-#define BUFSIZE 1024 * 10
+#define BUFSIZE 10240
 
 using namespace std;
 
@@ -32,14 +34,20 @@ private :
 
 	SOCKET sock;
 
+	vector<string> corrupted_file_list;
+
 public :
 	UdpClientSocket(int port, char* ip, int serv_port);
 	void createSocket();
 	void closeSocket();
 	void sendMessage(char* message);
 	void receiveFile(string f_name);
+	void resumeFile(string f_name);
 	char* receiveMessage();
 	string getHash(string md5Str);
+	getFileSize(char* file_name);
+	void clearCorruptedFileList();
+	vector<string> getCorruptedFileList();
 };
 
 UdpClientSocket::UdpClientSocket(int port, char* ip, int servPort)
@@ -81,7 +89,7 @@ void UdpClientSocket::sendMessage(char* message)
 	int mLen = strlen(message);
 	strcpy(buf, message);
 	sendto(sock, buf, mLen, 0, (struct sockaddr *)&servAddr, sizeof(servAddr));
-	Sleep(20);
+	Sleep(25);
 }
 
 char* UdpClientSocket::receiveMessage()
@@ -112,14 +120,154 @@ string UdpClientSocket::getHash(string md5Str)
 	return hex_output;
 }
 
-void UdpClientSocket::receiveFile(string f_name)
+int UdpClientSocket::getFileSize(char* file_name)
+{
+	FILE *file;
+
+	if( (file = fopen(file_name, "rb")) == NULL)
+	{
+		perror("fopen : ");
+		exit(1);
+	}
+
+	fseek(file, 0, SEEK_END);
+	int file_size = ftell(file);
+
+	return file_size;
+}
+
+void UdpClientSocket::resumeFile(string f_name)
 {
 	char* file_name = (char*)f_name.c_str();
-	printf("UDP protocol\n\n");
+	int len;
 
+	FILE* file;
+
+	if((file = fopen(file_name, "rb+")) == NULL)
+	{
+		perror("file : ");
+		exit(1);
+	}
+
+
+	// send exist file size
+	int exist_file_size = getFileSize(file_name);
+	sprintf(buf, "%d", exist_file_size);
+	sendMessage(buf);
+
+
+	// receive exist file state
+	strcpy(buf, receiveMessage());
+	if(!strcmp(buf, "strange file"))
+	{
+		printf("%s file is corrupt. Please delete it and try again\n", file_name);
+		corrupted_file_list.push_back(file_name);
+		return;
+	}
+	else if(!strcmp(buf, "same"))
+	{
+		printf("file download already done\n");
+		return;
+	}
+	else printf("%s file is ok. start download\n", file_name);
+
+	// get exist file hash value
+	string exist_file_hash_value = "";
+	while( (len = fread(buf, 1, BUFSIZE, file)) )
+	{
+		buf[len] = 0;
+		exist_file_hash_value = getHash(exist_file_hash_value + buf);
+	}
+
+	// receive server file hash value
+	string server_file_hash_value = receiveMessage();
+
+	// send file state
+	if(exist_file_hash_value != server_file_hash_value)
+	{
+		printf("%s file is corrupt. Please delete it and try again\n", file_name);
+		strcpy(buf, "corrupt");
+		sendMessage(buf);
+		corrupted_file_list.push_back(file_name);
+		Sleep(500);
+		return;
+	}
+	else
+	{
+		strcpy(buf, "OK");
+		sendMessage(buf);
+		Sleep(500);
+	}
+
+	// receive file
+	strcpy(buf, receiveMessage());
+	int N = atoi(buf);
+	clock_t start_time = clock();
+	int cnt = 1;
+	double receive_size = 0.0;
+	exist_file_hash_value = "";
+	for(int i=0; i<N; i++)
+	{
+		strcpy(buf, receiveMessage());
+		int size = strlen(buf);
+		fwrite(buf, sizeof(buf[0]), size, file);
+		exist_file_hash_value = getHash(exist_file_hash_value + buf);
+		receive_size += (double)size;
+		if(cnt % 100 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+		cnt++;
+		Sleep(20);
+	}
+	if(N != 0)
+		printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+	else printf("0.0MB/sec\n");
+	fclose(file);
+
+	// receive server file hash value
+	server_file_hash_value = receiveMessage();
+
+	// receive server file size
+	strcpy(buf, receiveMessage());
+	int receive_file_size = atoi(buf);
+
+	int my_file_size = getFileSize(file_name);
+
+	//compare receive_hash_value, my_hash_value
+	if(server_file_hash_value == exist_file_hash_value && receive_file_size == my_file_size)
+		printf("The file was successfully received.\n");
+	else
+	{
+		printf("%s file download failed... Please try again\n", file_name);
+		corrupted_file_list.push_back(file_name);
+	}
+
+}
+
+void UdpClientSocket::receiveFile(string f_name)
+{
+	int len;
+	char* file_name = (char*)f_name.c_str();
+	printf("\n\nUDP protocol\n\n");
+
+	if( access(file_name, 0) == 0)
+	{
+		// send Exist
+		strcpy(buf, "Exist");
+		sendMessage(buf);
+		Sleep(1000);
+		resumeFile(f_name);
+		return;
+	}
+	else
+	{
+		strcpy(buf, "None");
+		sendMessage(buf);
+		Sleep(1000);
+	}
+
+	printf("Receive this file : %s\n", file_name);
+	
 	char directory[1024] = "";
 	int f_len = strlen(file_name), idx = 0;
-	double receive_size = 0.0;
 	char temp [1024];
 
 	for(int i=0; i<f_len; i++)
@@ -131,8 +279,8 @@ void UdpClientSocket::receiveFile(string f_name)
 			idx = 0;
 		}
 		else temp[idx++] = file_name[i];
-	}
-	
+	}	
+
 	FILE* outFile;
 
 	if((outFile = fopen(file_name, "wb")) == NULL)
@@ -145,66 +293,71 @@ void UdpClientSocket::receiveFile(string f_name)
 		}
 	}
 
-	strcpy(buf, receiveMessage());
+	//receive file
 
+	//receive N
+	char number[10];
+	strcpy(number, receiveMessage());
+	int N = atoi(number);
+	
 	clock_t start_time = clock();
-	int cnt = 0;
-	while(strcmp(buf, "EOF"))
+	int cnt = 1;
+	double receive_size = 0.0;
+	for(int i=0; i<N; i++)
 	{
+		strcpy(buf, receiveMessage());
 		int size = strlen(buf);
 		fwrite(buf, sizeof(buf[0]), size, outFile);
-		strcpy(buf, receiveMessage());
 		receive_size += (double)size;
 		if(cnt % 100 == 0) printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
 		cnt++;
 	}
-	printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+	if(N != 0)
+		printf("%.2fMB/sec\n", (receive_size/(1024.0*1024.0)) / ((double)(clock() - start_time) / CLOCKS_PER_SEC));
+	else printf("0.0MB/sec\n");
 	fclose(outFile);
 
-	string receive_hash_value;
-	printf("%s\n", file_name);
+	// receive server file hash value
+	string server_file_hash_value = receiveMessage();
 
-	// receive file size
-	string receive_file_size = receiveMessage();
-
-	// receive hash value
-	receive_hash_value = receiveMessage();
-
-	// get my hash value
-	FILE* myFile;
-	int len;
-
-	string my_hash_value = "";
-
-	printf("%s\n", file_name);
-
-	if( (myFile = fopen(file_name, "rb")) == NULL )
+	if((outFile = fopen(file_name, "rb")) == NULL)
 	{
-		perror("myfile open : ");
+		perror("outFile : ");
 		exit(1);
 	}
 
-	while( (len = fread(buf, 1, BUFSIZE, myFile)) )
+	// get receive file hash value
+	string receive_file_hash_value = "";
+	while( (len = fread(buf, 1, BUFSIZE, outFile)) )
 	{
 		buf[len] = 0;
-		my_hash_value = getHash(my_hash_value + buf);
+		receive_file_hash_value = getHash(receive_file_hash_value + buf);
 	}
 
-	//get my file size
-	fseek(myFile, 0, SEEK_END);
-	int my_file_size = ftell(myFile);
-	sprintf(buf, "%d", my_file_size);
+	// receive server file size
+	strcpy(buf, receiveMessage());
+	int receive_file_size = atoi(buf);
 
-	printf("receive_file_size : %s, my_file_size : %s\n", receive_file_size.c_str(), buf);
-	fclose(myFile);
+	int my_file_size = getFileSize(file_name);
 
 
 	//compare receive_hash_value, my_hash_value
-	if(receive_hash_value == my_hash_value)
+	if(server_file_hash_value == receive_file_hash_value && receive_file_size == my_file_size)
 		printf("The file was successfully received.\n");
 	else
 	{
-		printf("The file download failed... Please try again\n");
-		exit(1);
+		printf("%s file download failed... Please try again\n", file_name);
+		corrupted_file_list.push_back(file_name);
+		return;
 	}
+}
+
+vector<string> UdpClientSocket::getCorruptedFileList()
+{
+	return corrupted_file_list;
+}
+
+void UdpClientSocket::clearCorruptedFileList()
+{
+	corrupted_file_list.clear();
 }
