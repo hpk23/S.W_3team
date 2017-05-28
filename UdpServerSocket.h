@@ -9,14 +9,14 @@
 #include <dirent.h>
 #include <vector>
 #include <utility>
+#include <math.h>
 #include "md5.h"
 #pragma comment(lib, "ws2_32.lib")
 
-#define BUFSIZE 1024 * 10
+#define BUFSIZE 10240
 #define LISTENNUM 5
 
 using namespace std;
-
 
 class UdpServerSocket
 {
@@ -42,8 +42,10 @@ public :
 	void sendMessage(char* message);
 	string getHash(string md5Str);
 	void sendFile(char* file_name);
+	void resumeFile(string f_name);
 	char* receiveMessage();
 	void searchFiles(char* path);
+	void clearFileList();
 	int getFileSize(char* file_name);
 	vector< pair<int, pair< string, string> > > getFileList();
 };
@@ -102,7 +104,7 @@ void UdpServerSocket::sendMessage(char* message)
 	int mLen = strlen(message);
 	strcpy(buf, message);
 	sendto(servSock, buf, mLen, 0, (struct sockaddr *)&cliAddr, sizeof(cliAddr));
-	Sleep(20);
+	Sleep(25);
 }
 
 string UdpServerSocket::getHash(string md5Str)
@@ -120,11 +122,104 @@ string UdpServerSocket::getHash(string md5Str)
 	return hex_output;
 }
 
+void UdpServerSocket::resumeFile(string f_name)
+{
+
+	char* file_name = (char*)f_name.c_str();
+	int len;
+
+	FILE* file;
+
+	// receive client exist file size
+	strcpy(buf, receiveMessage());
+	int client_file_size = atoi(buf);
+	int my_file_size = getFileSize(file_name);
+
+	if(client_file_size > my_file_size)
+	{
+		strcpy(buf, "strange file");
+		sendMessage(buf);
+		return;
+	}
+	else if(client_file_size == my_file_size)
+	{
+		strcpy(buf, "same");
+		sendMessage(buf);
+		return;
+	}
+	else
+	{
+		strcpy(buf, "OK");
+		sendMessage(buf);
+	}
+
+	if( (file = fopen(file_name, "rb")) == NULL)
+	{
+		perror("file : ");
+		exit(1);
+	}
+
+	//get server file hash value
+	string server_file_hash_value = "";
+	int amount = client_file_size;
+
+	while((len = fread(buf, 1, min(BUFSIZE, amount), file)) && amount > 0)
+	{
+		buf[len] = 0;
+		amount -= len;
+		server_file_hash_value = getHash(server_file_hash_value + buf);
+	}
+
+	sendMessage((char*)server_file_hash_value.c_str());
+
+	// receive file state
+	strcpy(buf, receiveMessage());
+	if(!strcmp(buf, "corrupt"))
+	{
+		printf("client file corrupted\n");
+		return;
+	}
+
+	// send file
+
+	Sleep(2000);
+	int remain_size = my_file_size - client_file_size;
+	int receive_size = ceil( (double)remain_size / BUFSIZE);
+	sprintf(buf, "%d", receive_size);
+	sendMessage(buf);
+	server_file_hash_value = "";
+	while((len = fread(buf, 1, BUFSIZE, file)))
+	{
+		buf[len] = 0;
+		server_file_hash_value = getHash(server_file_hash_value + buf);
+		sendMessage(buf);
+		Sleep(20);
+	}
+	Sleep(500);
+
+	// send server file hash value
+	sendMessage((char*)server_file_hash_value.c_str());
+
+	//send server file size
+	sprintf(buf, "%d", my_file_size);
+	sendMessage(buf);
+	Sleep(500);
+
+}
+
 void UdpServerSocket::sendFile(char* file_name)
 {
 	printf("\nUDP protocol\n");
+
+	strcpy(buf ,receiveMessage());
+	printf("file exist : %s\n", buf);
+	if(!strcmp(buf, "Exist"))
+	{
+		resumeFile(file_name);
+		return;
+	}
+
 	printf("Transfer this file : %s\n", file_name);
-	string hash_value = "";
 	int len;
 	FILE *file;
 
@@ -134,27 +229,34 @@ void UdpServerSocket::sendFile(char* file_name)
 		exit(1);
 	}
 
-	while( (len = fread(buf, 1, BUFSIZE, file)) )
+	int my_file_size = getFileSize(file_name);
+
+	// send file
+	string server_file_hash_value = "";
+
+	Sleep(2000);
+
+	// send receive size
+	int receive_size = ceil((double)my_file_size / BUFSIZE);
+	sprintf(buf, "%d", receive_size);
+	sendMessage(buf);
+
+	int cnt = 1;
+	while((len = fread(buf, 1, BUFSIZE, file)))
 	{
 		buf[len] = 0;
-		hash_value = getHash(hash_value + buf);
+		server_file_hash_value = getHash(server_file_hash_value + buf);
 		sendMessage(buf);
 	}
+	Sleep(500);
 
-	// End Of File
-	strcpy(buf, "EOF");
+	// send server file hash value
+	sendMessage((char*)server_file_hash_value.c_str());
+
+	//send server file size
+	sprintf(buf, "%d", my_file_size);
 	sendMessage(buf);
-
-	//send file size
-	fseek(file, 0, SEEK_END);
-	int file_size = ftell(file);
-	sprintf(buf, "%d", file_size);
-	sendMessage(buf);
-	fclose(file);
-
-	//send hash_value
-	char* hash = (char*)hash_value.c_str();
-	sendMessage(hash);
+	Sleep(500);
 }
 
 void UdpServerSocket::searchFiles(char* path)
@@ -250,4 +352,9 @@ int UdpServerSocket::getFileSize(char* file_name)
 vector< pair<int, pair< string, string> > > UdpServerSocket::getFileList()
 {
 	return file_list;
+}
+
+void UdpServerSocket::clearFileList()
+{
+	file_list.clear();
 }
